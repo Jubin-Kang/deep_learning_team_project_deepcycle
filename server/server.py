@@ -1,4 +1,6 @@
 from flask import Flask, request, jsonify, send_from_directory
+from db import insert_image_result, get_stats
+from dotenv import load_dotenv
 import os
 import base64
 import datetime
@@ -17,20 +19,30 @@ def upload_image():
 
     if 'image' not in data or 'extension' not in data:
         return jsonify({'error': 'Missing image data or extension'}), 400
-
+    
     try:
         # Base64 디코딩
         image_data = base64.b64decode(data['image'])
         ext = data['extension']  # 확장자 (예: jpg, png)
 
+        recycle_center_id = data["recycle_center_id"]
+
         # 파일명: 현재 PC 시간 기준
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"{timestamp}.{ext}"
+        filename = f"{recycle_center_id}_{timestamp}.{ext}"
         filepath = os.path.join(UPLOAD_FOLDER, filename)
+        
+        print("result : " + data['result'])
 
         # 파일 저장
         with open(filepath, "wb") as f:
             f.write(image_data)
+        
+        # ✅ 파일 크기 확인 (bytes 단위)
+        file_size = os.path.getsize(filepath)
+        
+        # DB에 이미지 경로 및 결과 저장
+        insert_image_result(filename, recycle_center_id, file_size, data['result'])
 
         image_url = f"http://192.168.0.48:5000/images/{filename}"
 
@@ -75,13 +87,14 @@ def get_statistics():
 
     # 샘플 데이터 반환
     stats = {
-        "status": "success",
-        "plastic": 1,
-        "glass": 1,
-        "can": 4,
-        "paper": 2,
-        "butangas": 4
-    }
+    "status": "success",
+    "data": [
+                {"date": "20250101", "plastic": 11, "glass": 12, "can": 13, "paper": 14, "general": 15},
+                {"date": "20250102", "plastic": 21, "glass": 22, "can": 23, "paper": 24, "general": 25},
+                {"date": "20250103", "plastic": 31, "glass": 32, "can": 33, "paper": 34, "general": 35},
+                {"date": "20250104", "plastic": 41, "glass": 42, "can": 43, "paper": 44, "general": 45}
+            ]
+        }
     return jsonify(stats)
 
 
@@ -97,8 +110,7 @@ def select_images():
 
     # 샘플 이미지 리스트 반환
     image_list = [
-        {"image_url": "https://example.com/uploads/image123.jpg"},
-        {"image_url": "https://example.com/uploads/image124.jpg"}
+        {"image_url": "http://192.168.0.48:5000/images/20250320_180028.jpeg"}
     ]
 
     return jsonify({"status": "success", "list": image_list})
@@ -108,6 +120,8 @@ def select_images():
 def get_image(filename):
     print(UPLOAD_FOLDER,filename)
     return send_from_directory(UPLOAD_FOLDER, filename)
+
+
 
 if __name__ == '__main__':
     print(f"Server running... Images will be saved in: {UPLOAD_FOLDER}")
