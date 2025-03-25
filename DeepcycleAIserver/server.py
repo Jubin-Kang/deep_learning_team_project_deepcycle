@@ -1,51 +1,39 @@
-import sys
-sys.path.append("/home/lim/dev_ws/deepcycle/yolov5")
-
+from ultralytics import YOLO
 import cv2
-import torch
 import base64
 import requests
 import time
 import socket
 import json
-from models.common import DetectMultiBackend
-from utils.general import non_max_suppression
 import numpy as np
 
 # ===============================
 # YOLO 및 서버 기본 설정
 # ===============================
-MODEL_PATH = "/home/lim/dev_ws/deepcycle/12_model.pt"  # 학습된 YOLO 모델 경로
-TCP_SERVER_URL = "http://192.168.0.48:5000/upload"     # Flask 서버 URL
-RECYCLE_CENTER_ID = 1  # 재활용 센터 ID 값 전송용
+MODEL_PATH = "/home/lim/dev_ws/deepcycle/12_model.pt"
+TCP_SERVER_URL = "http://192.168.0.48:5000/upload"
+RECYCLE_CENTER_ID = 1
 
 # ===============================
 # PyQt 클라이언트 통신 설정 (UDP)
 # ===============================
-PYQT_IP = "192.168.0.100"  # PyQt 클라이언트 IP
-PYQT_PORT = 6000  # PyQt가 수신할 포트
-pyqt_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)  # UDP 소켓 생성
+PYQT_IP = "192.168.0.100"
+PYQT_PORT = 6000
+pyqt_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 
 # ===============================
-# 모델 로드 및 설정
+# 모델 로드
 # ===============================
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-model = DetectMultiBackend(MODEL_PATH, device=device)
-model.eval()
+model = YOLO(MODEL_PATH)
 
 # ===============================
-# 클래스 이름 매핑
+# 클래스 이름 매핑 (YOLOv8은 자동 추출 불가 시 수동 입력 필요)
 # ===============================
 CLASS_NAMES = {
     0: "종이", 1: "종이팩", 2: "종이컵", 3: "캔류", 4: "유리병",
     5: "페트", 6: "플라스틱", 7: "비닐", 8: "유리+다중포장재",
     9: "페트+다중포장재", 10: "스티로폼", 11: "건전지"
 }
-
-# ===============================
-# PyQt로부터 영상 수신 (UDP 스트리밍)
-# ===============================
-cap = cv2.VideoCapture("udp://0.0.0.0:1234", cv2.CAP_FFMPEG)
 
 # ===============================
 # Flask 서버로 전송 함수 정의
@@ -78,6 +66,11 @@ def iou(box1, box2):
     return inter_area / union_area if union_area else 0
 
 # ===============================
+# PyQt로부터 영상 수신 (UDP 스트리밍)
+# ===============================
+cap = cv2.VideoCapture("udp://0.0.0.0:1234", cv2.CAP_FFMPEG)
+
+# ===============================
 # 메인 루프 (객체 감지/추적 및 통신)
 # ===============================
 last_sent_time = 0
@@ -87,7 +80,7 @@ tracker_box = None
 prev_class_id = None
 prev_box = None
 tracking_start_time = 0
-MAX_TRACK_DURATION = 3  # 트래커 유지 시간 (초)
+MAX_TRACK_DURATION = 3
 
 while cap.isOpened():
     ret, frame = cap.read()
@@ -99,30 +92,21 @@ while cap.isOpened():
     send_flag = False
 
     if not tracking or current_time - tracking_start_time > MAX_TRACK_DURATION:
-        # ===============================
-        # YOLO 객체 탐지 수행
-        # ===============================
-        resized = cv2.resize(frame, (640, 640))
-        img_tensor = torch.from_numpy(resized).permute(2, 0, 1).float().unsqueeze(0).to(device) / 255.0
-
-        with torch.no_grad():
-            pred = model(img_tensor)
-            detections = non_max_suppression(pred)
+        results = model.predict(frame, imgsz=640, conf=0.25, verbose=False)[0]
 
         best_class_id = None
         max_conf = 0.0
         best_box = None
 
-        for det in detections[0]:
-            x1, y1, x2, y2, conf, cls = det.cpu().numpy()
+        for box in results.boxes:
+            x1, y1, x2, y2 = map(int, box.xyxy[0])
+            conf = float(box.conf[0])
+            cls = int(box.cls[0])
             if conf > max_conf:
                 max_conf = conf
-                best_class_id = int(cls)
-                best_box = [int(x1), int(y1), int(x2), int(y2)]
+                best_class_id = cls
+                best_box = [x1, y1, x2, y2]
 
-        # ===============================
-        # 객체 변경 감지 및 트래킹 초기화 조건
-        # ===============================
         if best_box is not None:
             if prev_box is None or iou(prev_box, best_box) < 0.5 or best_class_id != prev_class_id:
                 from opencv_tracker_factory import create_tracker
@@ -134,14 +118,11 @@ while cap.isOpened():
                 prev_class_id = best_class_id
                 prev_box = best_box
                 tracking_start_time = current_time
-                send_flag = True  # 새로운 객체 감지 → Flask 전송 허용
+                send_flag = True
             else:
                 print("🔁 동일 객체로 판단됨 → 전송 생략")
                 tracking = False
     else:
-        # ===============================
-        # 트래커로 객체 위치 추적
-        # ===============================
         success, box = tracker.update(frame)
         if success:
             x, y, w, h = map(int, box)
@@ -160,7 +141,7 @@ while cap.isOpened():
         result_packet_live = {
             "class_name": CLASS_NAMES.get(prev_class_id, "Unknown"),
             "confidence": float(round(max_conf, 2)),
-            "box": list(map(int, tracker_box)) 
+            "box": list(map(int, tracker_box))
         }
         try:
             pyqt_sock.sendto(json.dumps(result_packet_live).encode(), (PYQT_IP, PYQT_PORT))
@@ -181,7 +162,7 @@ while cap.isOpened():
     # ===============================
     # GUI
     # ===============================
-    cv2.imshow("DeepCycle AI - YOLO + Tracker", frame)
+    cv2.imshow("DeepCycle AI - YOLOv8 + Tracker", frame)
     if cv2.waitKey(1) & 0xFF == ord('q'):
         break
 
