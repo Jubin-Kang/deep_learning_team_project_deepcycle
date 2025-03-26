@@ -1,126 +1,150 @@
 from flask import Flask, request, jsonify, send_from_directory
-from db import insert_image_result, get_stats
-from dotenv import load_dotenv
+from db import insert_image_result, get_image_list_with_pagination, get_statistics
 import os
 import base64
 import datetime
+import json
+import random
+import string
 
 app = Flask(__name__)
 
 # 이미지 저장 폴더 설정
 UPLOAD_FOLDER = os.path.abspath("./data")
-
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+
+# 허용된 이미지 확장자
+ALLOWED_EXTENSIONS = {"jpg", "jpeg", "png", "bmp"}
+
+def is_allowed_extension(ext):
+    return ext.lower() in ALLOWED_EXTENSIONS
 
 # 이미지 업로드 API
 @app.route('/upload', methods=['POST'])
 def upload_image():
-    data = request.json  # JSON 데이터 받기
-
-    if 'image' not in data or 'extension' not in data:
-        return jsonify({'error': 'Missing image data or extension'}), 400
-    
     try:
-        # Base64 디코딩
+        if not request.is_json:
+            return jsonify({'error': 'Content-Type must be application/json'}), 415
+
+        data = request.get_json(force=True)
+
+        required_fields = ['image', 'extension', 'box', 'deepcycle_center_id', 'confidence', 'class']
+        for field in required_fields:
+            if field not in data:
+                return jsonify({'error': f'Missing field: {field}'}), 400
+
+        ext = data['extension']
+        if not is_allowed_extension(ext):
+            return jsonify({'error': f'Unsupported file extension: {ext}'}), 400
+
         image_data = base64.b64decode(data['image'])
-        ext = data['extension']  # 확장자 (예: jpg, png)
+        detect_box_str = ','.join(map(str, data['box']))
 
-        recycle_center_id = data["recycle_center_id"]
+        deepcycle_center_id = data["deepcycle_center_id"]
+        result_confidence = data["confidence"]
+        material_code = data["class"]
 
-        # 파일명: 현재 PC 시간 기준
+        # 파일명 생성 (타임스탬프 + 랜덤문자)
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"{recycle_center_id}_{timestamp}.{ext}"
+        filename = f"{deepcycle_center_id}_{material_code}_{timestamp}.{ext}"
         filepath = os.path.join(UPLOAD_FOLDER, filename)
-        
-        print("result : " + data['result'])
 
         # 파일 저장
         with open(filepath, "wb") as f:
             f.write(image_data)
-        
-        # ✅ 파일 크기 확인 (bytes 단위)
+
         file_size = os.path.getsize(filepath)
-        
-        # DB에 이미지 경로 및 결과 저장
-        insert_image_result(filename, recycle_center_id, file_size, data['result'])
+
+        insert_image_result(filename, deepcycle_center_id, file_size, material_code, result_confidence, detect_box_str)
 
         image_url = f"http://192.168.0.48:5000/images/{filename}"
 
         return jsonify({'status': 'success', 'image_url': image_url})
 
     except Exception as e:
+        print(f"[Upload Error] {e}")
         return jsonify({'error': str(e)}), 500
 
 
-# 타입 조회 API (GET)
-@app.route('/type/<type>', methods=['GET'])
-def get_type(type):
-    type_list = ["plastic", "glass", "can", "paper", "butangas"]
-    if type in type_list:
-        return jsonify({'status': 'success', 'type': type})
-    else:
-        return jsonify({'error': 'Invalid type'}), 400
-
-
-# 타입 저장 API (POST)
-@app.route('/type', methods=['POST'])
-def save_type():
-    data = request.json
-
-    if not data:
-        return jsonify({'error': 'Missing type data'}), 400
-
-    return jsonify({'status': 'success', **data})
-
-
-# ✅ 통계 데이터 조회 API (POST)
 @app.route('/statistics', methods=['POST'])
-def get_statistics():
-    # 요청의 Content-Type이 JSON이 아닌 경우 처리
+def get_statistics_api():
     if not request.is_json:
         return jsonify({'error': 'Content-Type must be application/json'}), 415
 
-    data = request.get_json()  # JSON 데이터 가져오기
+    data = request.get_json()
+    required_fields = ["start_date", "end_date", "deepcycle_center_id", "page", "page_size"]
 
-    if not data or "start_date" not in data or "end_date" not in data:
-        return jsonify({'error': 'Missing start_date or end_date'}), 400
+    for field in required_fields:
+        if field not in data:
+            return jsonify({'error': f'Missing field: {field}'}), 400
 
-    # 샘플 데이터 반환
-    stats = {
-    "status": "success",
-    "data": [
-                {"date": "20250101", "plastic": 11, "glass": 12, "can": 13, "paper": 14, "general": 15},
-                {"date": "20250102", "plastic": 21, "glass": 22, "can": 23, "paper": 24, "general": 25},
-                {"date": "20250103", "plastic": 31, "glass": 32, "can": 33, "paper": 34, "general": 35},
-                {"date": "20250104", "plastic": 41, "glass": 42, "can": 43, "paper": 44, "general": 45}
-            ]
-        }
-    return jsonify(stats)
+    try:
+        stats = get_statistics(
+            start_date=data["start_date"],
+            end_date=data["end_date"],
+            deepcycle_center_id=data["deepcycle_center_id"],
+            page=int(data["page"]),
+            page_size=int(data["page_size"])
+        )
+
+        return jsonify({
+            "status": "success",
+            "list": stats["list"],
+            "total_count": stats["total_count"],
+            "total_pages": stats["total_pages"],
+            "page": stats["page"],
+            "page_size": stats["page_size"]
+        })
+    except Exception as e:
+        print(f"[Statistics Error] {e}")
+        return jsonify({'error': str(e)}), 500
 
 
-# 특정 기간의 이미지 리스트 조회 API (POST)
 @app.route('/selectImages', methods=['POST'])
 def select_images():
-    data = request.json
-    start_date = data.get("start_date")
-    end_date = data.get("end_date")
+    if not request.is_json:
+        return jsonify({'error': 'Content-Type must be application/json'}), 415
 
-    if not start_date or not end_date:
-        return jsonify({'error': 'Missing start_date or end_date'}), 400
+    data = request.get_json()
 
-    # 샘플 이미지 리스트 반환
-    image_list = [
-        {"image_url": "http://192.168.0.48:5000/images/20250320_180028.jpeg"}
-    ]
+    required_fields = ["start_date", "end_date", "deepcycle_center_id", "code"]
+    for field in required_fields:
+        if field not in data:
+            return jsonify({'error': f'Missing field: {field}'}), 400
 
-    return jsonify({"status": "success", "list": image_list})
+    try:
+        page = int(data.get("page", 1))
+        page_size = int(data.get("page_size", 10))
 
-# 저장된 이미지 접근 API
-@app.route('/images/<filename>')
+        result = get_image_list_with_pagination(
+            start_date=data["start_date"],
+            end_date=data["end_date"],
+            page=page,
+            page_size=page_size,
+            deepcycle_center_id=data["deepcycle_center_id"],
+            code=data["code"]
+        )
+
+        return jsonify({
+            "status": "success",
+            "page": page,
+            "page_size": page_size,
+            "total_count": result["total_count"],
+            "total_pages": result["total_pages"],
+            "list": result["list"]
+        })
+    except Exception as e:
+        print(f"[SelectImages Error] {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/images/<filename>', methods=['GET'])
 def get_image(filename):
-    print(UPLOAD_FOLDER,filename)
-    return send_from_directory(UPLOAD_FOLDER, filename)
-
+    try:
+        return send_from_directory(UPLOAD_FOLDER, filename)
+    except Exception as e:
+        print(f"[GetImage Error] {e}")
+        return jsonify({'error': 'Image not found'}), 404
 
 
 if __name__ == '__main__':
