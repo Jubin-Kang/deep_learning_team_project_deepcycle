@@ -1,4 +1,5 @@
 import cv2
+import queue
 
 def create_tracker(name="KCF"):
     """

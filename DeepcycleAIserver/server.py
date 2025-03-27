@@ -1,188 +1,178 @@
-import cv2
-import base64
-import requests
-import time
 import socket
-import json
+import cv2
 import numpy as np
-
+import threading
+import queue
+import time
+import json
+import requests
+from flask import request
 from yolo_detector import YoloDetector, CLASS_NAMES
-from utils import iou, encode_image_to_base64
-from opencv_tracker_factory import create_tracker
+from utils import encode_image_to_base64, iou
 
-# ===============================
-# 재매핑
-# ===============================
+# 디버깅
+SEND_TRAINING_DATA = True
 
-YOLO_CLASS_TO_SERVER_ID = {
-    "종이": 0, "종이팩": 0, "종이컵": 0,
-    "캔류": 1,
-    "유리병": 2,
-    "페트": 3, "플라스틱": 3,
-    "비닐": 4, "건전지": 4,
-    "유리+다중포장재": 5,
-    "페트+다중포장재": 5,
-    "스티로폼": 5
-}
-
-# ===============================
-# 기본 설정
-# ===============================
-VERBOSE = False # 디버깅 메세지 제어 
-
+# YOLO 모델 로드
 MODEL_PATH = "/home/lim/dev_ws/deepcycle/12_model.pt"
+detector = YoloDetector(MODEL_PATH)
+
+# Flask + PyQt 설정
 TCP_SERVER_URL = "http://192.168.0.48:5000/upload"
 RECYCLE_CENTER_ID = 1
-
 PYQT_IP = "192.168.0.100"
 PYQT_PORT = 6000
 pyqt_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 
-# YOLO 객체 생성
-detector = YoloDetector(MODEL_PATH)
+# Queue 생성
+frame_queue = queue.Queue(maxsize=3)
+result_queue = queue.Queue(maxsize=3)
 
-CONF_THRESHOLD = 0.5  # 최소 신뢰도 설정
+CONF_THRESHOLD = 0.5
+DURATION = 5  # seconds for batching detections
 
-last_class_sent_time = {} # 클래스별 마지막 전송 시각
-skip_count = {} # 클래스별 건너뛴 횟수 지정
-MIN_SEND_INTERVAL = 2  # 동일 클래스 최소 전송 간격 (초)
+YOLO_CLASS_TO_SERVER_ID = {
+    "종이": 1, "종이팩": 1, "종이컵": 1,
+    "캔류": 2,
+    "유리병": 3,
+    "페트": 4, "플라스틱": 4,
+    "비닐": 5,
+    "유리+다중포장재": 6,
+    "페트+다중포장재": 6,
+    "스티로폼": 6,
+    "건전지": 7
+}
 
-# ===============================
-# Flask 서버로 전송 함수
-# ===============================
-def send_results(image_b64, class_name, confidence, box):    
-    mapped_id = YOLO_CLASS_TO_SERVER_ID.get(class_name, -1)
-    
-    if mapped_id == -1:
-        print(f"⚠️ 서버로 전송 불가능한 클래스: {class_name}")
-        return
+# ========== Thread 1: 프레임 수신 ==========
+class FrameReceiverThread(threading.Thread):
+    def run(self):
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        sock.bind(("0.0.0.0", 1234))
+        print("[🔵] FrameReceiver 시작됨")
+        while True:
+            try:
+                data, _ = sock.recvfrom(65536)
+                frame = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR)
+                if frame is not None:
+                    frame_queue.put(frame)
+            except Exception as e:
+                print(f"[❌] FrameReceiver 오류: {e}")
 
-    data = {
-        "deepcycle_center_id": RECYCLE_CENTER_ID,
-        "image": image_b64,
-        "extension": "jpg",
-        "confidence": confidence,
-        "class": mapped_id,
-        "box": list(map(int, box))
-    }
-    try:
-        response = requests.post(TCP_SERVER_URL, json=data)
-        if response.status_code == 200:
-            print(f"🟢 Flask 응답: {response.json()}")
-        else:
-            print(f"⚠️ Flask 응답 오류: {response.status_code} - {response.text}")
-    except Exception as e:
-        print(f"❌ Flask 서버 전송 실패: {e}")
+# ========== Thread 2: YOLO 감지 + Tracker ==========
+class InferenceThread(threading.Thread):
+    def __init__(self):
+        super().__init__()
+        self.buffer = []
+        self.start_time = time.time()
 
-# ===============================
-# 영상 수신 (PyQt UDP 스트리밍)
-# ===============================
-sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-sock.bind(("0.0.0.0", 1234))
-print("📡 UDP 수신 대기 중...")
+    def run(self):
+        print("[🟡] InferenceThread 시작됨")
+        while True:
+            frame = frame_queue.get()
+            boxes, class_ids, confs = detector.detect_all(frame)  # <- detect_all() needs to return multiple detections
 
-# ===============================
-# 메인 루프
-# ===============================
-tracker = None
-tracking = False
-tracker_box = None
-prev_class_id = None
-prev_box = None
-tracking_start_time = 0
-last_sent_time = 0
-MAX_TRACK_DURATION = 3
+            for box, class_id, conf in zip(boxes, class_ids, confs):
+                if conf >= CONF_THRESHOLD:
+                    self.buffer.append((class_id, conf, box, frame))
+
+            if time.time() - self.start_time >= DURATION:
+                self.aggregate_and_send()
+                self.buffer.clear()
+                self.start_time = time.time()
+                
+    def aggregate_and_send(self):
+        if not self.buffer:
+            return
+        # Step 1: conf >= 0.5 필터링
+        filtered = [(cls_id, conf, box, frame) for cls_id, conf, box, frame in self.buffer if conf >= 0.5]
+        if not filtered:
+            return  # 아무것도 없으면 전송 안 함
+        
+        # Step 2: 클래스별로 그룹화
+        stat = {}
+        for class_id, conf, box, frame in filtered:
+            stat.setdefault(class_id, []).append((conf, box, frame))
+        
+        # Step 3: 가장 많이 나온 클래스 중 선택
+        # # → 빈도수가 같은 경우, 평균 conf 기준으로 선택
+        best_class_id = max(
+            stat.items(),
+            key=lambda x: (len(x[1]), np.mean([conf for conf, _, _ in x[1]]))
+        )[0]
+        
+        # Step 4: 그 클래스 중 conf가 가장 높은 항목 선택
+        best_conf, best_box, best_frame = max(stat[best_class_id], key=lambda x: x[0])
+        
+        # Step 5: 전송
+        result = {
+            "frame": best_frame,
+            "class_id": best_class_id,
+            "box": best_box,
+            "conf": best_conf
+        }
+        
+        result_queue.put(result)
+
+# ========== Thread 3: 결과 전송 (Flask + PyQt) ==========
+def draw_box_on_frame(frame, box, label=None):
+    img = frame.copy()
+    x1, y1, x2, y2 = map(int, box)
+    cv2.rectangle(img, (x1, y1), (x2, y2), (0, 255, 0), 2)
+    if label:
+        cv2.putText(img, label, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+    return img
+
+class ResultSenderThread(threading.Thread):
+    def run(self):
+        print("[🟢] ResultSenderThread 시작됨")
+        while True:
+            result = result_queue.get()
+            frame = result["frame"]
+            class_id = result["class_id"]
+            box = result["box"]
+            conf = result["conf"]
+            class_name = CLASS_NAMES.get(class_id, "Unknown")
+
+            try:
+                packet = {
+                    "class_name": class_name,
+                    "confidence": float(round(conf, 2)),
+                    "box": list(map(int, box)),
+                    "timestamp": time.time()
+                }
+                pyqt_sock.sendto(json.dumps(packet).encode(), (PYQT_IP, PYQT_PORT))
+            except:
+                print("[⚠️] PyQt 전송 실패")
+
+            frame_to_send = draw_box_on_frame(frame, box, f"{class_name} ({conf:.2f})") if SEND_TRAINING_DATA else frame
+            image_b64 = encode_image_to_base64(frame_to_send)
+            server_class_id = YOLO_CLASS_TO_SERVER_ID.get(class_name, -1)
+
+            if image_b64 and server_class_id != -1:
+                data = {
+                    "deepcycle_center_id": RECYCLE_CENTER_ID,
+                    "image": image_b64,
+                    "extension": "jpg",
+                    "confidence": conf,
+                    "class": server_class_id,
+                    "box": list(map(int, box))
+                }
+                try:
+                    response = requests.post(TCP_SERVER_URL, json=data)
+                    print(f"[📡] Flask 전송됨 → {class_name}")
+                    if response.status_code == 200:
+                        print(f"🟢 Flask 응답: {response.json()}")
+                    else:
+                        print(f"⚠️ Flask 응답 오류: {response.status_code} - {response.text}")
+                except:
+                    print("[❌] Flask 전송 실패")
+
+# ========== 스레드 실행 ==========
+FrameReceiverThread().start()
+InferenceThread().start()
+ResultSenderThread().start()
+
+# 메인 스레드 : 대기 
 
 while True:
-    try:
-        data, _ = sock.recvfrom(65536)
-        np_data = np.frombuffer(data, dtype=np.uint8)
-        frame = cv2.imdecode(np_data, cv2.IMREAD_COLOR)
-        if frame is None:
-            print("❌ 디코딩 실패")
-            continue
-    except Exception as e:
-        print(f"❌ 수신 오류: {e}")
-        continue
-
-    current_time = time.time()
-    send_flag = False
-
-    # === 객체 감지 ===
-    if not tracking or current_time - tracking_start_time > MAX_TRACK_DURATION:
-        best_box, best_class_id, max_conf = detector.detect(frame)
-        class_name = CLASS_NAMES.get(best_class_id, "Unknown")
-
-        if best_box:
-            x1, y1, x2, y2 = map(int, best_box)
-            cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
-            cv2.putText(frame, f"{class_name} ({max_conf:.2f})", (x1, y1 - 10),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
-
-        if max_conf < CONF_THRESHOLD:
-            if VERBOSE:
-                print(f"⚠️ 낮은 conf={max_conf:.2f} → {class_name} 생략")
-            continue
-
-        if best_box is not None:
-            if prev_box is None or iou(prev_box, best_box) < 0.5 or best_class_id != prev_class_id:
-                bbox = (best_box[0], best_box[1], best_box[2] - best_box[0], best_box[3] - best_box[1])
-                tracker = create_tracker("KCF")
-                tracker.init(frame, bbox)
-
-                tracker_box = best_box
-                prev_class_id = best_class_id
-                prev_box = best_box
-                tracking_start_time = current_time
-                tracking = True
-                send_flag = True
-            else:
-                tracking = False
-    else:
-        success, box = tracker.update(frame)
-        if success:
-            x, y, w, h = map(int, box)
-            tracker_box = [x, y, x + w, y + h]
-            if current_time - last_sent_time >= 1:
-                send_flag = True
-        else:
-            print("🔁 추적 실패 → 재탐지 예정")
-            tracking = False
-            continue
-
-    # === PyQt로 실시간 결과 전송 ===
-    if tracker_box is not None:
-        result_packet_live = {
-            "class_name": CLASS_NAMES.get(prev_class_id, "Unknown"),
-            "confidence": float(round(max_conf, 2)),
-            "box": list(map(int, tracker_box))
-        }
-        try:
-            pyqt_sock.sendto(json.dumps(result_packet_live).encode(), (PYQT_IP, PYQT_PORT))
-        except Exception as e:
-            print(f"⚠️ PyQt 전송 실패: {e}")
-
-    # === Flask로 1회 전송 ===
-    if send_flag and tracker_box is not None:
-        class_name = CLASS_NAMES.get(prev_class_id, "Unknown")
-        now = time.time()
-        last_time = last_class_sent_time.get(prev_class_id, 0)
-        skip_count[class_name] = skip_count.get(class_name, 0) + 1
-
-        if skip_count[class_name] % 10 == 0:
-            print(f"⏸️ {class_name} 최근 전송됨 → {skip_count[class_name]}회 누적 생략")
-
-        image_b64 = encode_image_to_base64(frame)
-        if image_b64:
-            send_results(image_b64, class_name, max_conf, tracker_box)
-            print(f"📡 Flask 전송: {class_name}")
-            last_sent_time = current_time
-            last_class_sent_time[prev_class_id] = now
-
-    # === GUI 디버깅 확인용 ===
-    cv2.imshow("DeepCycle AI - YOLOv8 + Tracker", frame)
-    if cv2.waitKey(1) & 0xFF == ord('q'):
-        break
-
-sock.close()
-cv2.destroyAllWindows()
+    time.sleep(1)

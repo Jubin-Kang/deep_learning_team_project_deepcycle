@@ -1,5 +1,6 @@
 import cv2
 import base64
+import queue
 
 # ===============================
 # IOU 계산 함수 (객체 동일성 판단용)
