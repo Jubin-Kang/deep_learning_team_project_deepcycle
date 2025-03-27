@@ -1,6 +1,7 @@
 from ultralytics import YOLO
 import numpy as np
 import cv2
+import torch 
 
 CLASS_NAMES = {
     0: "종이", 1: "종이팩", 2: "종이컵", 3: "캔류", 4: "유리병",
@@ -11,6 +12,8 @@ CLASS_NAMES = {
 class YoloDetector:
     def __init__(self, model_path):
         self.model = YOLO(model_path)
+        self.model.to("cuda" if torch.cuda.is_available() else "cpu")
+
 
     def detect(self, frame):
         results = self.model.predict(frame, imgsz=640, conf=0.25, verbose=False)[0]

@@ -77,47 +77,50 @@ def send_results(image_b64, class_name, confidence, box):
 # ===============================
 # 영상 수신 (PyQt UDP 스트리밍)
 # ===============================
-cap = cv2.VideoCapture("udp://0.0.0.0:1234", cv2.CAP_FFMPEG)
+sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+sock.bind(("0.0.0.0", 1234))
+print("📡 UDP 수신 대기 중...")
 
 # ===============================
 # 메인 루프
 # ===============================
-last_sent_time = 0
 tracker = None
 tracking = False
 tracker_box = None
 prev_class_id = None
 prev_box = None
 tracking_start_time = 0
+last_sent_time = 0
 MAX_TRACK_DURATION = 3
 
-while cap.isOpened():
-    ret, frame = cap.read()
-    if not ret:
-        print("❌ 프레임 수신 실패")
+while True:
+    try:
+        data, _ = sock.recvfrom(65536)
+        np_data = np.frombuffer(data, dtype=np.uint8)
+        frame = cv2.imdecode(np_data, cv2.IMREAD_COLOR)
+        if frame is None:
+            print("❌ 디코딩 실패")
+            continue
+    except Exception as e:
+        print(f"❌ 수신 오류: {e}")
         continue
+
     current_time = time.time()
     send_flag = False
 
-    # 새 객체 감지 조건
+    # === 객체 감지 ===
     if not tracking or current_time - tracking_start_time > MAX_TRACK_DURATION:
-        # YOLO 감지
         best_box, best_class_id, max_conf = detector.detect(frame)
-
-        # 클래스 이름 정의
         class_name = CLASS_NAMES.get(best_class_id, "Unknown")
-        
-        # 바운딩 박스 시각화
+
         if best_box:
             x1, y1, x2, y2 = map(int, best_box)
-            cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)  # 녹색 박스
+            cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
             cv2.putText(frame, f"{class_name} ({max_conf:.2f})", (x1, y1 - 10),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
-            
-        # conf 필터링 / 전송 판단
 
         if max_conf < CONF_THRESHOLD:
-            if VERBOSE and int(time.time()) % 3 == 0:
+            if VERBOSE:
                 print(f"⚠️ 낮은 conf={max_conf:.2f} → {class_name} 생략")
             continue
 
@@ -134,7 +137,6 @@ while cap.isOpened():
                 tracking = True
                 send_flag = True
             else:
-                print("🔁 동일 객체로 판단됨 → 전송 생략")
                 tracking = False
     else:
         success, box = tracker.update(frame)
@@ -148,9 +150,7 @@ while cap.isOpened():
             tracking = False
             continue
 
-    # ===============================
-    # PyQt로 실시간 결과 전송
-    # ===============================
+    # === PyQt로 실시간 결과 전송 ===
     if tracker_box is not None:
         result_packet_live = {
             "class_name": CLASS_NAMES.get(prev_class_id, "Unknown"),
@@ -162,17 +162,13 @@ while cap.isOpened():
         except Exception as e:
             print(f"⚠️ PyQt 전송 실패: {e}")
 
-    # ===============================
-    # Flask로 1회 전송
-    # ===============================
+    # === Flask로 1회 전송 ===
     if send_flag and tracker_box is not None:
         class_name = CLASS_NAMES.get(prev_class_id, "Unknown")
-        
-        # ⏱️ 동일 클래스 최소 전송 간격 체크
         now = time.time()
         last_time = last_class_sent_time.get(prev_class_id, 0)
         skip_count[class_name] = skip_count.get(class_name, 0) + 1
-        
+
         if skip_count[class_name] % 10 == 0:
             print(f"⏸️ {class_name} 최근 전송됨 → {skip_count[class_name]}회 누적 생략")
 
@@ -181,14 +177,12 @@ while cap.isOpened():
             send_results(image_b64, class_name, max_conf, tracker_box)
             print(f"📡 Flask 전송: {class_name}")
             last_sent_time = current_time
-            last_class_sent_time[prev_class_id] = now  # 시간 갱신
+            last_class_sent_time[prev_class_id] = now
 
-    # ===============================
-    # GUI 확인용 출력
-    # ===============================
+    # === GUI 디버깅 확인용 ===
     cv2.imshow("DeepCycle AI - YOLOv8 + Tracker", frame)
     if cv2.waitKey(1) & 0xFF == ord('q'):
         break
 
-cap.release()
+sock.close()
 cv2.destroyAllWindows()
