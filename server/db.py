@@ -19,6 +19,21 @@ db_config = {
 def get_connection():
     return mysql.connector.connect(**db_config)
 
+def select_esp32_ip():
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    query = """
+            SELECT deepcycle_center_id, esp32_ip
+            FROM deepcycle_center         
+        """
+    
+    cursor.execute(query, ())
+    results = cursor.fetchall()
+    cursor.close()
+    conn.close()
+    return results
+
 def insert_image_result(image_name, deepcycle_center_id, image_size, deepcycle_material_code, confidence, result):
     try:
         conn = get_connection()
@@ -31,7 +46,6 @@ def insert_image_result(image_name, deepcycle_center_id, image_size, deepcycle_m
             INSERT INTO deepcycle_log (image_name, deepcycle_center_id, image_size, deepcycle_material_code, confidence ,detection_info, save_date)
             VALUES (%s, %s, %s, %s, %s, %s, %s)
         """
-
 
         cursor.execute(query, (image_name, deepcycle_center_id, image_size, deepcycle_material_code, confidence, result, save_date))
         conn.commit()
@@ -155,12 +169,13 @@ def get_statistics(start_date, end_date, deepcycle_center_id, page, page_size):
 
         # material_code → name 매핑
         material_map = {
-            0: 'paper',
-            1: 'can',
-            2: 'glass',
-            3: 'plastic',
-            4: 'etc',
-            5: 'general'
+            1: 'paper',
+            2: 'can',
+            3: 'glass',
+            4: 'plastic',
+            5: 'vinyl',
+            6: 'general',
+            7: 'battery'
         }
 
         # 날짜별로 통계 정리
@@ -183,8 +198,9 @@ def get_statistics(start_date, end_date, deepcycle_center_id, page, page_size):
                     "glass": 0,
                     "can": 0,
                     "paper": 0,
-                    "etc": 0,
-                    "general": 0
+                    "vinyl": 0,
+                    "general": 0,
+                    "battery":0
                 }
 
             stats_dict[date_key][material_name] += row["count"]
