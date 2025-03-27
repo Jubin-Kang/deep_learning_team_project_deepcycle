@@ -34,7 +34,7 @@ class Camera(QThread):
         super().__init__()
         self.main = parent
         self.running = True
-        self.delay = 0.05 
+        self.delay = 0.15
 
     def run(self):
         while self.running:
@@ -79,7 +79,7 @@ class WindowClass(QMainWindow, from_class):
         self.receiver = YoloReceiver()
         self.receiver.result_received.connect(self.handle_yolo_result)
         self.receiver.start()
-        
+    
     def updateCamera(self):
         retval, image = self.video.read()
         if retval:
@@ -93,19 +93,22 @@ class WindowClass(QMainWindow, from_class):
                 cv2.rectangle(image_rgb, (x1, y1), (x2, y2), (255, 0, 0), 2)
                 cv2.putText(image_rgb, f"{class_name} ({confidence:.2f})",
                             (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 0, 0), 2)
-                
+            
             height, width, channel = image_rgb.shape
             bytes_per_line = 3 * width
             qimg = QImage(image_rgb.data, width, height, bytes_per_line, QImage.Format_RGB888)
             pixmap = QPixmap.fromImage(qimg)
             pixmap = pixmap.scaled(self.label.width(), self.label.height(), Qt.KeepAspectRatio)
             self.label.setPixmap(pixmap)
+            
+            # 🟡 이미지 전송 전에 해상도를 줄여서 패킷 크기 감소
+            resized = cv2.resize(image, (480, 360))  # 320x240 → 480x360
+            _, encoded_img = cv2.imencode('.jpg', resized, [int(cv2.IMWRITE_JPEG_QUALITY), 90])
 
-            # JPEG 인코딩 후 YOLO 서버로 전송
-            _, encoded_img = cv2.imencode('.jpg', image)
             if encoded_img is not None:
                 try:
                     self.sock.sendto(encoded_img.tobytes(), (self.udp_ip, self.udp_port))
+                    # print(f"📤 전송 크기: {len(encoded_img)} bytes")  # 디버깅용
                 except Exception as e:
                     print(f"UDP 전송 오류: {e}")
 
