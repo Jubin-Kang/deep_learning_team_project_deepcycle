@@ -8,6 +8,8 @@ from datetime import datetime, timedelta
 
 load_dotenv()
 
+DATA_SERVER_URL = os.getenv('DATA_SERVER_URL')
+
 db_config = {
     'host': os.getenv('MYSQL_HOST'),
     'user': os.getenv('MYSQL_USER'),
@@ -99,25 +101,19 @@ def get_image_list_with_pagination(start_date, end_date, page, page_size, deepcy
             ORDER BY save_date ASC
             LIMIT %s OFFSET %s
         """
-        
-        print(data_sql)
-
-        print(start_date + ' 00:00:00', end_date + ' 23:59:59', code, deepcycle_center_id, page_size, offset)
-
+       
         cursor.execute(data_sql, (code, deepcycle_center_id, start_date + ' 00:00:00', end_date + ' 23:59:59', page_size, offset))
         results = cursor.fetchall()
 
         # 이미지 리스트 구성
         image_list = []
         for row in results:
-            image_url = f"http://192.168.0.48:5000/images/{row['image_name']}"
+            image_url = f"{DATA_SERVER_URL}/images/{row['image_name']}"
             image_list.append({
                 "image_url": image_url,
                 "image_name": row['image_name'],
                 "save_date": row['save_date'].strftime("%Y-%m-%d %H:%M:%S")
             })
-
-        print(image_list)
 
         return {
             "list": image_list,
@@ -132,17 +128,6 @@ def get_image_list_with_pagination(start_date, end_date, page, page_size, deepcy
             "total_count": 0,
             "total_pages": 0
         }
-
-def get_material_to_code(material_name):
-    material_name_to_code = {
-        0: 'paper',
-        1: 'can',
-        2: 'glass',
-        3: 'plastic',
-        4: 'etc',
-        5: 'general'
-    }
-    return material_name_to_code.get(material_name.lower(), 999)
 
 def get_statistics(start_date, end_date, deepcycle_center_id, page, page_size):
     try:
@@ -233,3 +218,34 @@ def get_statistics(start_date, end_date, deepcycle_center_id, page, page_size):
             "page": page,
             "page_size": page_size
         }
+    
+
+def update_trash_status(image_name: str, trash_status: int):
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        query = """
+            UPDATE deepcycle_log
+            SET trash_status = %s
+            WHERE image_name = %s
+        """
+        cursor.execute(query, (trash_status, image_name))
+        conn.commit()
+
+        updated_rows = cursor.rowcount  # 몇 개 행이 업데이트됐는지 확인
+        cursor.close()
+        conn.close()
+
+        return {
+            "success": True,
+            "updated_rows": updated_rows
+        }
+
+    except Exception as e:
+        print(f"[DB Error] update_trash_status: {e}")
+        return {
+            "success": False,
+            "error": str(e)
+        }
+
