@@ -9,8 +9,8 @@ import requests
 from flask import request
 from yolo_detector import YoloDetector, CLASS_NAMES
 from utils import encode_image_to_base64, iou
+from opencv_tracker_factory import create_tracker
 
-# 디버깅
 SEND_TRAINING_DATA = True
 
 # YOLO 모델 로드
@@ -18,9 +18,9 @@ MODEL_PATH = "/home/lim/dev_ws/deepcycle/12_model.pt"
 detector = YoloDetector(MODEL_PATH)
 
 # Flask + PyQt 설정
-TCP_SERVER_URL = "http://192.168.0.48:5000/upload"
+TCP_SERVER_URL = "http://192.168.0.56:5000/upload"
 RECYCLE_CENTER_ID = 1
-PYQT_IP = "192.168.0.100"
+PYQT_IP = "192.168.0.28"
 PYQT_PORT = 6000
 pyqt_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 
@@ -29,18 +29,17 @@ frame_queue = queue.Queue(maxsize=3)
 result_queue = queue.Queue(maxsize=3)
 
 CONF_THRESHOLD = 0.5
-DURATION = 5  # seconds for batching detections
 
 YOLO_CLASS_TO_SERVER_ID = {
-    "종이": 1, "종이팩": 1, "종이컵": 1,
-    "캔류": 2,
-    "유리병": 3,
-    "페트": 4, "플라스틱": 4,
-    "비닐": 5,
-    "유리+다중포장재": 6,
-    "페트+다중포장재": 6,
-    "스티로폼": 6,
-    "건전지": 7
+    "Paper": 1, "Paper Pack": 1, "Paper Cup": 1,
+    "Can": 2,
+    "Glass Bottle": 3,
+    "PET Bottle": 4, "Plastic": 4,
+    "Vinyl": 5,
+    "Glass & Multi-layer Packaging": 6,
+    "PET & Multi-layer Packaging": 6,
+    "Styrofoam": 6,
+    "Battery": 7
 }
 
 # ========== Thread 1: 프레임 수신 ==========
@@ -62,24 +61,14 @@ class FrameReceiverThread(threading.Thread):
 class InferenceThread(threading.Thread):
     def __init__(self):
         super().__init__()
+        self.trackers = {}  # {id: (tracker, class_id, last_seen_time)}
+        self.next_tracker_id = 0
+        self.iou_threshold = 0.5
+        self.timeout = 3
         self.buffer = []
         self.start_time = time.time()
-
-    def run(self):
-        print("[🟡] InferenceThread 시작됨")
-        while True:
-            frame = frame_queue.get()
-            boxes, class_ids, confs = detector.detect_all(frame)  # <- detect_all() needs to return multiple detections
-
-            for box, class_id, conf in zip(boxes, class_ids, confs):
-                if conf >= CONF_THRESHOLD:
-                    self.buffer.append((class_id, conf, box, frame))
-
-            if time.time() - self.start_time >= DURATION:
-                self.aggregate_and_send()
-                self.buffer.clear()
-                self.start_time = time.time()
-                
+        self.duration = 5
+    
     def aggregate_and_send(self):
         if not self.buffer:
             return
@@ -113,6 +102,51 @@ class InferenceThread(threading.Thread):
         
         result_queue.put(result)
 
+    def run(self):
+        print("[🟡] InferenceThread 시작됨")
+        while True:
+            frame = frame_queue.get()
+            current_time = time.time()
+            boxes, class_ids, confs = detector.detect_all(frame)
+
+            for box, class_id, conf in zip(boxes, class_ids, confs):
+                if conf < CONF_THRESHOLD:
+                    continue
+
+                matched = False
+                for tracker_id, (tracker, t_class_id, last_seen) in list(self.trackers.items()):
+                    success, tracked_box = tracker.update(frame)
+                    if not success or t_class_id != class_id:
+                        continue
+                    iou_score = iou(box, tracked_box)
+                    if iou_score >= self.iou_threshold:
+                        # 기존 객체
+                        self.trackers[tracker_id] = (tracker, class_id, current_time)
+                        matched = True
+                        break
+
+                if not matched:
+                    # 새 객체
+                    tracker = create_tracker()
+                    tracker.init(frame, tuple(box))
+                    self.trackers[self.next_tracker_id] = (tracker, class_id, current_time)
+                    self.next_tracker_id += 1
+                    # → 여기서만 buffer에 추가
+                    self.buffer.append((class_id, conf, box, frame))
+                    print(f"[🟢] 새 객체 감지 → Buffer에 추가됨")
+
+            # 오래된 Tracker 삭제
+            for tracker_id in list(self.trackers.keys()):
+                _, _, last_seen = self.trackers[tracker_id]
+                if current_time - last_seen > self.timeout:
+                    del self.trackers[tracker_id]
+
+            # 5초 동안 모은 buffer 전송
+            if time.time() - self.start_time >= self.duration:
+                self.aggregate_and_send()
+                self.buffer.clear()
+                self.start_time = time.time()
+
 # ========== Thread 3: 결과 전송 (Flask + PyQt) ==========
 def draw_box_on_frame(frame, box, label=None):
     img = frame.copy()
@@ -141,6 +175,7 @@ class ResultSenderThread(threading.Thread):
                     "timestamp": time.time()
                 }
                 pyqt_sock.sendto(json.dumps(packet).encode(), (PYQT_IP, PYQT_PORT))
+                print(f"[📡] PyQt 전송 → {class_name}")
             except:
                 print("[⚠️] PyQt 전송 실패")
 
@@ -159,20 +194,19 @@ class ResultSenderThread(threading.Thread):
                 }
                 try:
                     response = requests.post(TCP_SERVER_URL, json=data)
-                    print(f"[📡] Flask 전송됨 → {class_name}")
+                    print(f"[📡] Flask 전송 → {class_name}")
                     if response.status_code == 200:
                         print(f"🟢 Flask 응답: {response.json()}")
                     else:
                         print(f"⚠️ Flask 응답 오류: {response.status_code} - {response.text}")
                 except:
                     print("[❌] Flask 전송 실패")
+                    pass
 
 # ========== 스레드 실행 ==========
 FrameReceiverThread().start()
 InferenceThread().start()
 ResultSenderThread().start()
-
-# 메인 스레드 : 대기 
 
 while True:
     time.sleep(1)

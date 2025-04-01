@@ -5,9 +5,9 @@ import torch
 import queue
 
 CLASS_NAMES = {
-    0: "종이", 1: "종이팩", 2: "종이컵", 3: "캔류", 4: "유리병",
-    5: "페트", 6: "플라스틱", 7: "비닐", 8: "유리+다중포장재",
-    9: "페트+다중포장재", 10: "스티로폼", 11: "건전지"
+    0: "Paper", 1: "Paper Pack", 2: "Paper Cup", 3: "Can", 4: "Glass Bottle",
+    5: "PET Bottle", 6: "Plastic", 7: "Vinyl", 8: "Glass & Multi-layer Packaging",
+    9: "PET & Multi-layer Packaging", 10: "Styrofoam", 11: "Battery"
 }
 
 class YoloDetector:
