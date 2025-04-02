@@ -13,6 +13,7 @@ from_class = uic.loadUiType("DeepCycle_Client.ui")[0]
 
 class YoloReceiver(QThread):
     result_received = pyqtSignal(dict)
+    message_received = pyqtSignal(str)  
 
     def run(self):
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -21,9 +22,14 @@ class YoloReceiver(QThread):
             try:
                 data, _ = sock.recvfrom(4096)
                 result = json.loads(data.decode())
-                self.result_received.emit(result)
+
+                if "message" in result:
+                    self.message_received.emit(result["message"])
+                else:
+                    self.result_received.emit(result)
             except Exception as e:
                 print(f"[❌] YOLO 수신 오류: {e}")
+
 
 class Camera(QThread):
     update = pyqtSignal()
@@ -78,9 +84,17 @@ class WindowClass(QMainWindow, from_class):
         self.receiver = YoloReceiver()
         self.receiver.result_received.connect(self.handle_yolo_result)
         self.receiver.start()
+        
+        self.receiver.message_received.connect(self.show_message)
 
         # 카메라 시작
         self.cameraStart()
+
+    # 같은 객체 반복 감지 시  
+    def show_message(self, msg):
+        QMessageBox.information(self, "안내", msg)
+
+
 
     def handle_yolo_result(self, result):
         self.yolo_result = result
