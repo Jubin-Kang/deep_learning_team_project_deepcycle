@@ -1,20 +1,26 @@
-import traceback
-from flask import jsonify
+import cv2
+import base64
+import queue
 
-def handle_exception(location: str, user_message="서버 오류가 발생했습니다. 다시 시도해주세요.", status_code=500):
-    """
-    공통 예외 처리 템플릿
-    :param location: 예외 발생 함수나 API 이름
-    :param user_message: 사용자에게 보여줄 메시지
-    :param status_code: HTTP 상태 코드 (기본값 500)
-    :return: Flask JSON 응답
-    """
-    def inner(e):
-        print(f"[{location}] ❌ 예외 발생: {str(e)}")
-        traceback.print_exc()
-        return jsonify({
-            "status": "error",
-            "message": user_message,
-            "detail": str(e)
-        }), status_code
-    return inner
+# ===============================
+# IOU 계산 함수 (객체 동일성 판단용)
+# ===============================
+def iou(box1, box2):
+    xi1 = max(box1[0], box2[0])
+    yi1 = max(box1[1], box2[1])
+    xi2 = min(box1[2], box2[2])
+    yi2 = min(box1[3], box2[3])
+    inter_area = max(0, xi2 - xi1) * max(0, yi2 - yi1)
+    box1_area = (box1[2] - box1[0]) * (box1[3] - box1[1])
+    box2_area = (box2[2] - box2[0]) * (box2[3] - box2[1])
+    union_area = box1_area + box2_area - inter_area
+    return inter_area / union_area if union_area else 0
+
+# ===============================
+# 이미지 → base64 인코딩 함수
+# ===============================
+def encode_image_to_base64(frame):
+    ret, buffer = cv2.imencode(".jpg", frame)
+    if not ret:
+        return None
+    return base64.b64encode(buffer).decode("utf-8")
