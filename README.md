@@ -5,7 +5,16 @@
 
 # ♻️ DeepCycle: 딥러닝 기반 스마트 분리수거 시스템
 
-![DeepCycle Logo](링크 또는 이미지 경로)
+<!-- PROJECT LOGO -->
+<br />
+<p align="center">
+  <a href="https://github.com/addinedu-ros-8th/deeplearning-repo-5">
+    <img src="https://github.com/addinedu-ros-8th/deeplearning-repo-5/blob/main/DeepCycle.png" alt="Logo" width="500px">
+  </a>
+
+  <h3 align="center">스마트 분리 수거 시스템</h3>
+</p>
+<hr>
 
 > **환사모(환경을 사랑하는 모임)** 팀이 개발한, 인공지능을 활용한 스마트 쓰레기 분류 및 관리 시스템입니다.
 
