@@ -35,13 +35,16 @@ DeepCycle은 YOLOv8 기반의 딥러닝 모델과 IoT 기술을 활용하여, �
 
 ### 💬 시스템 통신  
 ![TCP](https://img.shields.io/badge/TCP%2FUDP-005B9A?style=flat&logo=internet-computer&logoColor=white)
-![Flask](https://img.shields.io/badge/Flask-000000?style=flat&logo=flask&logoColor=white)
 ![RESTful](https://img.shields.io/badge/REST%20API-4E8EE0?style=flat&logo=fastapi&logoColor=white)
+![Postman](https://img.shields.io/badge/Postman-FF6C37?style=flat&logo=postman&logoColor=white)
 
 ### 💻 소프트웨어 및 GUI  
 ![PyQt5](https://img.shields.io/badge/PyQt5-41CD52?style=flat&logo=qt&logoColor=white)
 ![Web UI](https://img.shields.io/badge/Admin%20Web%20UI-2D2D2D?style=flat&logo=html5&logoColor=white)
 ![VS Code](https://img.shields.io/badge/VS%20Code-007ACC?style=flat&logo=visual-studio-code&logoColor=white)
+
+### 🖥️ 서버  
+![Flask](https://img.shields.io/badge/Flask-000000?style=flat&logo=flask&logoColor=white)
 
 ### 📡 임베디드 제어  
 ![ESP32](https://img.shields.io/badge/ESP32-3C3C3C?style=flat&logo=espressif&logoColor=white)
@@ -50,7 +53,9 @@ DeepCycle은 YOLOv8 기반의 딥러닝 모델과 IoT 기술을 활용하여, �
 
 ### 🗃 데이터베이스 / 로그 관리  
 ![MySQL](https://img.shields.io/badge/MySQL-4479A1?style=flat&logo=mysql&logoColor=white)
+![SQLite](https://img.shields.io/badge/SQLite-003B57?style=flat&logo=sqlite&logoColor=white)
 ![DBeaver](https://img.shields.io/badge/DBeaver-372923?style=flat&logo=dbeaver&logoColor=white)
+![ERD](https://img.shields.io/badge/ERD%20Design-2B5797?style=flat&logo=diagrams-dot-net&logoColor=white)
 
 ### 📦 데이터 관리  
 ![AIHub](https://img.shields.io/badge/AIHub%20Dataset-00C853?style=flat&logo=databricks&logoColor=white)
