@@ -9,6 +9,7 @@ import base64
 import datetime
 import requests
 import threading
+import subprocess
 
 app = Flask(__name__)
 api = Api(app, version='1.0', title='DeepCycle API',
@@ -22,7 +23,11 @@ center_ip_map = {}
 
 load_dotenv()
 
-DATA_SERVER_URL = os.getenv('DATA_SERVER_URL')
+def get_ip_from_ifconfig():
+    result = subprocess.run("hostname -I", shell=True, stdout=subprocess.PIPE)
+    return result.stdout.decode().strip().split()[0]  # 첫 번째 IP만 반환
+
+DATA_SERVER_URL = get_ip_from_ifconfig()
 UPLOAD_FOLDER = os.path.abspath("./data")
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
@@ -42,7 +47,8 @@ def notify_esp32(deepcycle_center_id, material_code, image_name):
         else:
             print(f"[ESP32] - 상태코드: {response.status_code}, 응답: {response.text}")
     except Exception as e:
-        return handle_exception("notify_esp32", "ESP32 통신 에러.", status_code=500)(e)
+        # return handle_exception("notify_esp32", "ESP32 통신 에러.", status_code=500)(e)
+        print(f"[ESP32] - 통신 오류: {e}")
 
 upload_model = ns.model('UploadModel', {
     'image': fields.String(required=True, description='Base64 인코딩된 이미지'),
@@ -87,7 +93,7 @@ class Upload(Resource):
             image_name = f"{deepcycle_center_id}_{material_code}_{timestamp}.{ext}"
             filepath = os.path.join(UPLOAD_FOLDER, image_name)
             
-            # threading.Thread(target=notify_esp32, args=(deepcycle_center_id, material_code, image_name)).start()
+            threading.Thread(target=notify_esp32, args=(deepcycle_center_id, material_code, image_name)).start()
             
             with open(filepath, "wb") as f:
                 f.write(image_data)
@@ -95,7 +101,7 @@ class Upload(Resource):
             insert_image_result(image_name, deepcycle_center_id, file_size, material_code, result_confidence, detect_box_str)
             image_url = f"{DATA_SERVER_URL}/images/{image_name}"
             return {'status': 'success', 'image_url': image_url}
-        except Exception as e:
+        except Exception as e:            
             return handle_exception("upload_image", "이미지 업로드 중 오류가 발생했습니다.", status_code=500)(e)
 
 statistics_model = ns.model('StatisticsRequest', {

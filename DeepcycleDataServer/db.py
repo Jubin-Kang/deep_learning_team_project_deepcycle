@@ -36,7 +36,7 @@ def select_esp32_ip():
     conn.close()
     return results
 
-def insert_image_result(image_name, deepcycle_center_id, image_size, deepcycle_material_code, confidence, result):
+def insert_image_result(image_name, deepcycle_center_id, image_size, deepcycle_material_code, confidence, box):
     try:
         conn = get_connection()
         cursor = conn.cursor()
@@ -45,11 +45,11 @@ def insert_image_result(image_name, deepcycle_center_id, image_size, deepcycle_m
         save_date = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
         query = """
-            INSERT INTO deepcycle_log (image_name, deepcycle_center_id, image_size, deepcycle_material_code, confidence ,detection_info, save_date)
+            INSERT INTO deepcycle_log (image_name, deepcycle_center_id, image_size, deepcycle_material_code, confidence ,detection_box, save_date)
             VALUES (%s, %s, %s, %s, %s, %s, %s)
         """
 
-        cursor.execute(query, (image_name, deepcycle_center_id, image_size, deepcycle_material_code, confidence, result, save_date))
+        cursor.execute(query, (image_name, deepcycle_center_id, image_size, deepcycle_material_code, confidence, box, save_date))
         conn.commit()
 
     except Exception as e:
@@ -129,11 +129,18 @@ def get_image_list_with_pagination(start_date, end_date, page, page_size, deepcy
             "total_pages": 0
         }
 
+import math
+from datetime import datetime
+
 def get_statistics(start_date, end_date, deepcycle_center_id, page, page_size):
     try:
         conn = get_connection()
         cursor = conn.cursor(dictionary=True)
-        
+
+        # OFFSET 계산
+        offset = (page - 1) * page_size
+
+        # 통계 쿼리 (LIMIT / OFFSET 포함)
         sql = """
             SELECT 
                 DATE(save_date) AS date,
@@ -146,11 +153,29 @@ def get_statistics(start_date, end_date, deepcycle_center_id, page, page_size):
             GROUP BY 
                 DATE(save_date), deepcycle_material_code
             ORDER BY 
-                date ASC;
+                date ASC
+            LIMIT %s OFFSET %s;
         """
 
-        cursor.execute(sql, (deepcycle_center_id, start_date + ' 00:00:00', end_date + ' 23:59:59'))
+        cursor.execute(sql, (deepcycle_center_id, start_date + ' 00:00:00', end_date + ' 23:59:59', page_size, offset))
         rows = cursor.fetchall()
+
+        # 전체 결과 수 계산용 쿼리 (group by 포함)
+        count_sql = """
+            SELECT COUNT(*) AS total FROM (
+                SELECT 
+                    DATE(save_date)
+                FROM 
+                    deepcycle_log
+                WHERE 
+                    deepcycle_center_id = %s AND save_date BETWEEN %s AND %s
+                GROUP BY 
+                    DATE(save_date)
+            ) AS sub;
+        """
+        cursor.execute(count_sql, (deepcycle_center_id, start_date + ' 00:00:00', end_date + ' 23:59:59'))
+        total_count = cursor.fetchone()["total"]
+        total_pages = math.ceil(total_count / page_size) if page_size > 0 else 1
 
         # material_code → name 매핑
         material_map = {
@@ -173,7 +198,6 @@ def get_statistics(start_date, end_date, deepcycle_center_id, page, page_size):
                 date_obj = row["date"]
 
             date_key = date_obj.strftime("%Y-%m-%d")
-
             material_name = material_map.get(row["deepcycle_material_code"], "unknown")
 
             if date_key not in stats_dict:
@@ -185,40 +209,24 @@ def get_statistics(start_date, end_date, deepcycle_center_id, page, page_size):
                     "paper": 0,
                     "vinyl": 0,
                     "general": 0,
-                    "battery":0
+                    "battery": 0
                 }
 
             stats_dict[date_key][material_name] += row["count"]
 
-        # 리스트 정렬
-        all_results = list(stats_dict.values())
-        all_results.sort(key=lambda x: x["date"])
-
-        # ✅ 페이지네이션 처리
-        total_count = len(all_results)
-        total_pages = math.ceil(total_count / page_size) if page_size > 0 else 1
-        start_index = (page - 1) * page_size
-        end_index = start_index + page_size
-        paged_results = all_results[start_index:end_index]
+        result_list = list(stats_dict.values())
+        result_list.sort(key=lambda x: x["date"])
 
         return {
-            "list": paged_results,
+            "list": result_list,
             "total_count": total_count,
             "total_pages": total_pages,
             "page": page,
             "page_size": page_size
         }
-
     except Exception as e:
-        print(f"[DB Error] get_statistics: {e}")
-        return {
-            "list": [],
-            "total_count": 0,
-            "total_pages": 0,
-            "page": page,
-            "page_size": page_size
-        }
-    
+        return {"error": str(e)}
+
 
 def update_trash_status(image_name: str, trash_status: int):
     try:
