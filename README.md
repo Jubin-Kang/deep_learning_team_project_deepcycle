@@ -1,20 +1,6 @@
-# deeplearning-repo-5
-딥러닝 프로젝트 5조 저장소.
-
-팀원: 강주빈, 김규환, 이상윤, 임승연, 권빛
-
 # ♻️ DeepCycle: 딥러닝 기반 스마트 분리수거 시스템
 
-<!-- PROJECT LOGO -->
-<br />
-<p align="center">
-  <a href="https://github.com/addinedu-ros-8th/deeplearning-repo-5">
-    <img src="https://github.com/addinedu-ros-8th/deeplearning-repo-5/blob/main/DeepCycle.png" alt="Logo" width="500px">
-  </a>
-
-  <h3 align="center">스마트 분리 수거 시스템</h3>
-</p>
-<hr>
+![DeepCycle Logo](링크 또는 이미지 경로)
 
 > **환사모(환경을 사랑하는 모임)** 팀이 개발한, 인공지능을 활용한 스마트 쓰레기 분류 및 관리 시스템입니다.
 
@@ -88,17 +74,26 @@ DeepCycle은 YOLOv8 기반의 딥러닝 모델과 IoT 기술을 활용하여, �
 ## 🧠 모델 정보
 
 - **사용 모델**: [YOLOv8n](https://github.com/ultralytics/ultralytics)
-- **클래스 수**: 학습용 12개 → 실시간 분류 6개 그룹 축소  
-- **분류 클래스**:
+- **클래스 수**: YOLO 학습용 12 클래스 → 서버 처리용 7개 그룹으로 매핑
 
-| 최종 그룹 | 포함된 클래스 |
-|-----------|----------------|
-| 0. 종이 | 종이, 종이팩, 종이컵 |
-| 1. 캔 | 캔 |
-| 2. 유리 | 재사용 유리, 색깔 유리, 유리+다중포장재 |
-| 3. 플라스틱/페트 | 페트, 다중포장재 포함 |
-| 4. 비닐 | 비닐 |
-| 5. 일반 쓰레기 | 이물질 혼합 항목 전반 |
+### 📦 YOLO → Server Class 매핑
+
+| YOLO 클래스명 | 서버 전송 클래스 ID |
+|---------------|---------------------|
+| Paper | 1 |
+| Paper Pack | 1 |
+| Paper Cup | 1 |
+| Can | 2 |
+| Glass Bottle | 3 |
+| PET Bottle | 4 |
+| Plastic | 4 |
+| Vinyl | 5 |
+| Glass & Multi-layer Packaging | 6 |
+| PET & Multi-layer Packaging | 6 |
+| Styrofoam | 6 |
+| Battery | 7 |
+
+> 위 매핑을 통해 YOLO 탐지 결과를 서버 처리 목적에 맞게 통합 분류함.
 
 ---
 
