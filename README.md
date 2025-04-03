@@ -48,8 +48,9 @@ DeepCycle은 YOLOv8 기반의 딥러닝 모델과 IoT 기술을 활용하여, �
 ![Ultrasonic Sensor](https://img.shields.io/badge/Ultrasonic%20Sensor-AAAAAA?style=flat&logo=simpleicons&logoColor=white)
 ![Servo Motor](https://img.shields.io/badge/Servo%20Motor-888888?style=flat&logo=gear&logoColor=white)
 
-### 🗃 데이터베이스
+### 🗃 데이터베이스 / 로그 관리  
 ![MySQL](https://img.shields.io/badge/MySQL-4479A1?style=flat&logo=mysql&logoColor=white)
+![DBeaver](https://img.shields.io/badge/DBeaver-372923?style=flat&logo=dbeaver&logoColor=white)
 
 ### 📦 데이터 관리  
 ![AIHub](https://img.shields.io/badge/AIHub%20Dataset-00C853?style=flat&logo=databricks&logoColor=white)
