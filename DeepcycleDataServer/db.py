@@ -1,14 +1,14 @@
 import mysql.connector
 import os
 from dotenv import load_dotenv
-
 import math
+from datetime import datetime
 
-from datetime import datetime, timedelta
+from utils import get_ip_from_ifconfig
 
 load_dotenv()
 
-DATA_SERVER_URL = os.getenv('DATA_SERVER_URL')
+DATA_SERVER_URL = "http://" + get_ip_from_ifconfig() + ":5000"
 
 db_config = {
     'host': os.getenv('MYSQL_HOST'),
@@ -43,6 +43,15 @@ def insert_image_result(image_name, deepcycle_center_id, image_size, deepcycle_m
         
         # MySQL에 넣기 위해 문자열 포맷
         save_date = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        
+        print("[DB] insert_image_result:")
+        print(f"  - image_name            : {image_name}")
+        print(f"  - deepcycle_center_id   : {deepcycle_center_id}")
+        print(f"  - image_size            : {image_size}")
+        print(f"  - deepcycle_material_code: {deepcycle_material_code}")
+        print(f"  - confidence            : {confidence}")
+        print(f"  - box                   : {box}")
+
 
         query = """
             INSERT INTO deepcycle_log (image_name, deepcycle_center_id, image_size, deepcycle_material_code, confidence ,detection_box, save_date)
@@ -87,7 +96,7 @@ def get_image_list_with_pagination(start_date, end_date, page, page_size, deepcy
         count_sql = """
             SELECT COUNT(*) AS total
             FROM deepcycle_log
-            WHERE save_date BETWEEN %s AND %s AND deepcycle_material_code = %s And deepcycle_center_id = %s
+            WHERE save_date BETWEEN %s AND %s AND trash_status = 1 AND deepcycle_material_code = %s And deepcycle_center_id = %s
         """
         cursor.execute(count_sql, (start_date + ' 00:00:00', end_date + ' 23:59:59', code, deepcycle_center_id))
         total_count = cursor.fetchone()['total']
@@ -97,7 +106,7 @@ def get_image_list_with_pagination(start_date, end_date, page, page_size, deepcy
         data_sql = """
             SELECT image_name, save_date, deepcycle_material_code
             FROM deepcycle_log
-            WHERE deepcycle_material_code = %s AND deepcycle_center_id = %s AND save_date BETWEEN %s AND %s 
+            WHERE deepcycle_material_code = %s AND trash_status = 1 AND deepcycle_center_id = %s AND save_date BETWEEN %s AND %s 
             ORDER BY save_date ASC
             LIMIT %s OFFSET %s
         """
@@ -129,18 +138,11 @@ def get_image_list_with_pagination(start_date, end_date, page, page_size, deepcy
             "total_pages": 0
         }
 
-import math
-from datetime import datetime
-
 def get_statistics(start_date, end_date, deepcycle_center_id, page, page_size):
     try:
         conn = get_connection()
         cursor = conn.cursor(dictionary=True)
-
-        # OFFSET 계산
-        offset = (page - 1) * page_size
-
-        # 통계 쿼리 (LIMIT / OFFSET 포함)
+        
         sql = """
             SELECT 
                 DATE(save_date) AS date,
@@ -149,33 +151,15 @@ def get_statistics(start_date, end_date, deepcycle_center_id, page, page_size):
             FROM 
                 deepcycle_log
             WHERE 
-                deepcycle_center_id = %s AND save_date BETWEEN %s AND %s
+                deepcycle_center_id = %s AND trash_status = 1 AND save_date BETWEEN %s AND %s
             GROUP BY 
                 DATE(save_date), deepcycle_material_code
             ORDER BY 
-                date ASC
-            LIMIT %s OFFSET %s;
+                date ASC;
         """
 
-        cursor.execute(sql, (deepcycle_center_id, start_date + ' 00:00:00', end_date + ' 23:59:59', page_size, offset))
+        cursor.execute(sql, (deepcycle_center_id, start_date + ' 00:00:00', end_date + ' 23:59:59'))
         rows = cursor.fetchall()
-
-        # 전체 결과 수 계산용 쿼리 (group by 포함)
-        count_sql = """
-            SELECT COUNT(*) AS total FROM (
-                SELECT 
-                    DATE(save_date)
-                FROM 
-                    deepcycle_log
-                WHERE 
-                    deepcycle_center_id = %s AND save_date BETWEEN %s AND %s
-                GROUP BY 
-                    DATE(save_date)
-            ) AS sub;
-        """
-        cursor.execute(count_sql, (deepcycle_center_id, start_date + ' 00:00:00', end_date + ' 23:59:59'))
-        total_count = cursor.fetchone()["total"]
-        total_pages = math.ceil(total_count / page_size) if page_size > 0 else 1
 
         # material_code → name 매핑
         material_map = {
@@ -198,6 +182,7 @@ def get_statistics(start_date, end_date, deepcycle_center_id, page, page_size):
                 date_obj = row["date"]
 
             date_key = date_obj.strftime("%Y-%m-%d")
+
             material_name = material_map.get(row["deepcycle_material_code"], "unknown")
 
             if date_key not in stats_dict:
@@ -209,24 +194,40 @@ def get_statistics(start_date, end_date, deepcycle_center_id, page, page_size):
                     "paper": 0,
                     "vinyl": 0,
                     "general": 0,
-                    "battery": 0
+                    "battery":0
                 }
 
             stats_dict[date_key][material_name] += row["count"]
 
-        result_list = list(stats_dict.values())
-        result_list.sort(key=lambda x: x["date"])
+        # 리스트 정렬
+        all_results = list(stats_dict.values())
+        all_results.sort(key=lambda x: x["date"])
+
+        # ✅ 페이지네이션 처리
+        total_count = len(all_results)
+        total_pages = math.ceil(total_count / page_size) if page_size > 0 else 1
+        start_index = (page - 1) * page_size
+        end_index = start_index + page_size
+        paged_results = all_results[start_index:end_index]
 
         return {
-            "list": result_list,
+            "list": paged_results,
             "total_count": total_count,
             "total_pages": total_pages,
             "page": page,
             "page_size": page_size
         }
-    except Exception as e:
-        return {"error": str(e)}
 
+    except Exception as e:
+        print(f"[DB Error] get_statistics: {e}")
+        return {
+            "list": [],
+            "total_count": 0,
+            "total_pages": 0,
+            "page": page,
+            "page_size": page_size
+        }
+    
 
 def update_trash_status(image_name: str, trash_status: int):
     try:
