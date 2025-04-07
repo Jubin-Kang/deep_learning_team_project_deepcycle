@@ -1,14 +1,14 @@
-from flask import Flask, request, jsonify, send_from_directory
+from flask import Flask, request, send_from_directory
 from flask_restx import Api, Resource, fields, Namespace
 from db import insert_image_result, get_image_list_with_pagination, get_statistics, select_esp32_ip, update_trash_status
-from utils import handle_exception
+from utils import handle_exception, get_ip_from_ifconfig, is_allowed_extension, notify_esp32
 
 from dotenv import load_dotenv
 import os
 import base64
 import datetime
-import requests
 import threading
+
 
 app = Flask(__name__)
 api = Api(app, version='1.0', title='DeepCycle API',
@@ -22,27 +22,9 @@ center_ip_map = {}
 
 load_dotenv()
 
-DATA_SERVER_URL = os.getenv('DATA_SERVER_URL')
+DATA_SERVER_URL = "http://" + get_ip_from_ifconfig() + ":5000"
 UPLOAD_FOLDER = os.path.abspath("./data")
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-
-ALLOWED_EXTENSIONS = {"jpg", "jpeg", "png", "bmp"}
-
-def is_allowed_extension(ext):
-    return ext.lower() in ALLOWED_EXTENSIONS
-
-def notify_esp32(deepcycle_center_id, material_code, image_name):
-    try:
-        esp32_ip = center_ip_map.get(deepcycle_center_id)
-        payload = {"material_code": material_code, "image_name": image_name}
-        response = requests.post(f"http://{esp32_ip}:80/detectResult", json=payload, timeout=3)
-
-        if response.status_code == 200:
-            print(f"[ESP32] - 응답: {response.text}")
-        else:
-            print(f"[ESP32] - 상태코드: {response.status_code}, 응답: {response.text}")
-    except Exception as e:
-        return handle_exception("notify_esp32", "ESP32 통신 에러.", status_code=500)(e)
 
 upload_model = ns.model('UploadModel', {
     'image': fields.String(required=True, description='Base64 인코딩된 이미지'),
@@ -87,7 +69,7 @@ class Upload(Resource):
             image_name = f"{deepcycle_center_id}_{material_code}_{timestamp}.{ext}"
             filepath = os.path.join(UPLOAD_FOLDER, image_name)
             
-            # threading.Thread(target=notify_esp32, args=(deepcycle_center_id, material_code, image_name)).start()
+            threading.Thread(target=notify_esp32, args=(deepcycle_center_id, material_code, image_name, center_ip_map)).start()
             
             with open(filepath, "wb") as f:
                 f.write(image_data)
@@ -95,7 +77,7 @@ class Upload(Resource):
             insert_image_result(image_name, deepcycle_center_id, file_size, material_code, result_confidence, detect_box_str)
             image_url = f"{DATA_SERVER_URL}/images/{image_name}"
             return {'status': 'success', 'image_url': image_url}
-        except Exception as e:
+        except Exception as e:            
             return handle_exception("upload_image", "이미지 업로드 중 오류가 발생했습니다.", status_code=500)(e)
 
 statistics_model = ns.model('StatisticsRequest', {
@@ -214,7 +196,6 @@ trash_status_model = ns.model('TrashStatusRequest', {
     'image_name': fields.String(required=True, description='업데이트할 이미지 파일 이름'),
     'trash_status': fields.Integer(required=True, description='쓰레기 상태 값')
 })
-
 
 trash_status_response_model = ns.model('TrashStatusResponse', {
     'status': fields.String(description='처리 결과')

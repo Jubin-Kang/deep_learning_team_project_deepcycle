@@ -1,14 +1,14 @@
 import mysql.connector
 import os
 from dotenv import load_dotenv
-
 import math
+from datetime import datetime
 
-from datetime import datetime, timedelta
+from utils import get_ip_from_ifconfig
 
 load_dotenv()
 
-DATA_SERVER_URL = os.getenv('DATA_SERVER_URL')
+DATA_SERVER_URL = "http://" + get_ip_from_ifconfig() + ":5000"
 
 db_config = {
     'host': os.getenv('MYSQL_HOST'),
@@ -36,20 +36,29 @@ def select_esp32_ip():
     conn.close()
     return results
 
-def insert_image_result(image_name, deepcycle_center_id, image_size, deepcycle_material_code, confidence, result):
+def insert_image_result(image_name, deepcycle_center_id, image_size, deepcycle_material_code, confidence, box):
     try:
         conn = get_connection()
         cursor = conn.cursor()
         
         # MySQL에 넣기 위해 문자열 포맷
         save_date = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        
+        print("[DB] insert_image_result:")
+        print(f"  - image_name            : {image_name}")
+        print(f"  - deepcycle_center_id   : {deepcycle_center_id}")
+        print(f"  - image_size            : {image_size}")
+        print(f"  - deepcycle_material_code: {deepcycle_material_code}")
+        print(f"  - confidence            : {confidence}")
+        print(f"  - box                   : {box}")
+
 
         query = """
-            INSERT INTO deepcycle_log (image_name, deepcycle_center_id, image_size, deepcycle_material_code, confidence ,detection_info, save_date)
+            INSERT INTO deepcycle_log (image_name, deepcycle_center_id, image_size, deepcycle_material_code, confidence ,detection_box, save_date)
             VALUES (%s, %s, %s, %s, %s, %s, %s)
         """
 
-        cursor.execute(query, (image_name, deepcycle_center_id, image_size, deepcycle_material_code, confidence, result, save_date))
+        cursor.execute(query, (image_name, deepcycle_center_id, image_size, deepcycle_material_code, confidence, box, save_date))
         conn.commit()
 
     except Exception as e:
@@ -87,7 +96,7 @@ def get_image_list_with_pagination(start_date, end_date, page, page_size, deepcy
         count_sql = """
             SELECT COUNT(*) AS total
             FROM deepcycle_log
-            WHERE save_date BETWEEN %s AND %s AND deepcycle_material_code = %s And deepcycle_center_id = %s
+            WHERE save_date BETWEEN %s AND %s AND trash_status = 1 AND deepcycle_material_code = %s And deepcycle_center_id = %s
         """
         cursor.execute(count_sql, (start_date + ' 00:00:00', end_date + ' 23:59:59', code, deepcycle_center_id))
         total_count = cursor.fetchone()['total']
@@ -97,7 +106,7 @@ def get_image_list_with_pagination(start_date, end_date, page, page_size, deepcy
         data_sql = """
             SELECT image_name, save_date, deepcycle_material_code
             FROM deepcycle_log
-            WHERE deepcycle_material_code = %s AND deepcycle_center_id = %s AND save_date BETWEEN %s AND %s 
+            WHERE deepcycle_material_code = %s AND trash_status = 1 AND deepcycle_center_id = %s AND save_date BETWEEN %s AND %s 
             ORDER BY save_date ASC
             LIMIT %s OFFSET %s
         """
@@ -142,7 +151,7 @@ def get_statistics(start_date, end_date, deepcycle_center_id, page, page_size):
             FROM 
                 deepcycle_log
             WHERE 
-                deepcycle_center_id = %s AND save_date BETWEEN %s AND %s
+                deepcycle_center_id = %s AND trash_status = 1 AND save_date BETWEEN %s AND %s
             GROUP BY 
                 DATE(save_date), deepcycle_material_code
             ORDER BY 
