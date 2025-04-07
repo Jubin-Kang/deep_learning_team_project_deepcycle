@@ -8,6 +8,10 @@
   </a>
 
   <h3 align="center">스마트 분리 수거 시스템</h3>
+  <p align="center">
+    <a href="https://youtu.be/7Mb05Vj0SKM">Video Demo</a>\\
+    <a href="https://www.miricanvas.com/v/14eaoym">Presentation</a>
+  </p>
 </p>
 <hr>
 
