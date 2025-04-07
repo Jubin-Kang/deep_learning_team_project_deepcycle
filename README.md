@@ -24,6 +24,15 @@ DeepCycle은 YOLOv8 기반의 딥러닝 모델과 IoT 기술을 활용하여, �
 - **주제**: 생활폐기물 스마트 분리수거 시스템  
 - **핵심 기술**: YOLOv8, Python, ESP32, OpenCV, TCP/UDP Socket, PyQt5
 
+## 팀 구성 및 역할
+|        | name | job |
+|--------|------|-----|
+| leader | 강주빈 |  프로젝트 관리, GUI 설계 및 Server, AI 연동 |   
+| worker | 권빛 |  데이터 전처리, 커스텀 AI 모델 개발, PPT 제작 및 README 작성 |   
+| worker | 김규환 |  Data Server 구축, DB 및 통신 프로토콜 설계 |    
+| worker | 이상윤 |  DB 구축, GUI와 AI 연동, 하드웨어 설계 및 구축 |   
+| worker | 임상윤 |  AI Server 구축, 통신 프로토콜 연동, GUI와 AI 연동 |   
+
 ---
 
 ## 🛠 기술 스택 (Tech Stack)
@@ -110,12 +119,50 @@ DeepCycle은 YOLOv8 기반의 딥러닝 모델과 IoT 기술을 활용하여, �
 
 ### 🖼 시스템 아키텍처 구성
 
-#### HW 아키텍처
+#### HW Architecture
 ![HW](https://private-user-images.githubusercontent.com/53811474/430186168-0cc63798-6d72-4fc2-a2c4-cb046185cd84.jpg?jwt=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmF3LmdpdGh1YnVzZXJjb250ZW50LmNvbSIsImtleSI6ImtleTUiLCJleHAiOjE3NDM3Mjg3MDYsIm5iZiI6MTc0MzcyODQwNiwicGF0aCI6Ii81MzgxMTQ3NC80MzAxODYxNjgtMGNjNjM3OTgtNmQ3Mi00ZmMyLWEyYzQtY2IwNDYxODVjZDg0LmpwZz9YLUFtei1BbGdvcml0aG09QVdTNC1ITUFDLVNIQTI1NiZYLUFtei1DcmVkZW50aWFsPUFLSUFWQ09EWUxTQTUzUFFLNFpBJTJGMjAyNTA0MDQlMkZ1cy1lYXN0LTElMkZzMyUyRmF3czRfcmVxdWVzdCZYLUFtei1EYXRlPTIwMjUwNDA0VDAxMDAwNlomWC1BbXotRXhwaXJlcz0zMDAmWC1BbXotU2lnbmF0dXJlPWE1NGZiOWNmYzI2MzFkNTA1MDQxYzE3MGM0OWNjMzQ5MzBmYTQzYWU0Y2FkMzJlZjY1YWFiM2YwNzYyNTlmYzgmWC1BbXotU2lnbmVkSGVhZGVycz1ob3N0In0.hmDtubZ2YmjYxO9bDBvzOFW89u3R7RxlF_aEDorFio4)
+<br >
 
-#### SW 아키텍처
+#### SW Architecture
 ![SW](https://private-user-images.githubusercontent.com/53811474/430186174-da71e368-ece5-40e5-9c71-58fe418974b2.jpg?jwt=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmF3LmdpdGh1YnVzZXJjb250ZW50LmNvbSIsImtleSI6ImtleTUiLCJleHAiOjE3NDM3Mjg3MDYsIm5iZiI6MTc0MzcyODQwNiwicGF0aCI6Ii81MzgxMTQ3NC80MzAxODYxNzQtZGE3MWUzNjgtZWNlNS00MGU1LTljNzEtNThmZTQxODk3NGIyLmpwZz9YLUFtei1BbGdvcml0aG09QVdTNC1ITUFDLVNIQTI1NiZYLUFtei1DcmVkZW50aWFsPUFLSUFWQ09EWUxTQTUzUFFLNFpBJTJGMjAyNTA0MDQlMkZ1cy1lYXN0LTElMkZzMyUyRmF3czRfcmVxdWVzdCZYLUFtei1EYXRlPTIwMjUwNDA0VDAxMDAwNlomWC1BbXotRXhwaXJlcz0zMDAmWC1BbXotU2lnbmF0dXJlPWMxMjlkZGZlMjhjZjA1ZWRhZmE3NzExNzYyODAzNDI2Yjg0NTlmNWNmOWVhZWI2MzU4MWU0YjcwYmY2NzVlYzMmWC1BbXotU2lnbmVkSGVhZGVycz1ob3N0In0.qalKfFVggHEs_Ic2ccBAlOewouJ7jf6AfLdFo_wVcCc)
+<br >
 
-### ERD
-![ERD](https://private-user-images.githubusercontent.com/53811474/430187252-9df3f26a-5287-48bd-9f60-39d3fa90644d.jpg?jwt=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmF3LmdpdGh1YnVzZXJjb250ZW50LmNvbSIsImtleSI6ImtleTUiLCJleHAiOjE3NDM3MjkxMjUsIm5iZiI6MTc0MzcyODgyNSwicGF0aCI6Ii81MzgxMTQ3NC80MzAxODcyNTItOWRmM2YyNmEtNTI4Ny00OGJkLTlmNjAtMzlkM2ZhOTA2NDRkLmpwZz9YLUFtei1BbGdvcml0aG09QVdTNC1ITUFDLVNIQTI1NiZYLUFtei1DcmVkZW50aWFsPUFLSUFWQ09EWUxTQTUzUFFLNFpBJTJGMjAyNTA0MDQlMkZ1cy1lYXN0LTElMkZzMyUyRmF3czRfcmVxdWVzdCZYLUFtei1EYXRlPTIwMjUwNDA0VDAxMDcwNVomWC1BbXotRXhwaXJlcz0zMDAmWC1BbXotU2lnbmF0dXJlPWY3ZTliMjlmZDliMTFjMTBmOTk2NTg4YWUyOTljNjk5NjlkNWU0NTEwYjIzZDg4NDJjMTllOTQ3ZDk1MjUxNjYmWC1BbXotU2lnbmVkSGVhZGVycz1ob3N0In0.8k2K3pmdcuUhbOqHKJt-UK8suwDd0oNr5RRvXp3YAlw)
+## ERD
+![image](https://github.com/user-attachments/assets/197b5dc9-3cd1-4fd2-ae00-68c5c79903b9)
+<br >
 
+## Interface Specification
+![image](https://github.com/user-attachments/assets/0ca15dcf-6799-408f-8231-a643f5bcc07a)
+<br >
+
+## GUI Specification
+### Interface GUI
+![image](https://github.com/user-attachments/assets/d70cc1d9-f4c2-4638-b04b-ff557c376e99)
+<br >
+
+### Admin GUI
+![image](https://github.com/user-attachments/assets/826fcb31-95af-4716-83f4-6cb606fcd42a)
+<br >
+
+## Sequence Diagram
+![image](https://github.com/user-attachments/assets/1f6bc3c2-01de-4e7a-be3e-7a5e1be77d96)
+![image](https://github.com/user-attachments/assets/2f2030c7-5220-4091-964b-3d6d19504789)
+<br >
+
+## Implements
+### Interface GUI
+![image](https://github.com/user-attachments/assets/6ee83925-2547-44d4-8936-76e070e09418)
+<br >
+
+### Admin GUI
+![image](https://github.com/user-attachments/assets/8c9c1be2-997b-496e-8cba-cacead336cb0)
+<br >
+
+### DeepCycle Bin
+![image](https://github.com/user-attachments/assets/42121920-5b89-4b1c-80a3-7d6c562714b8)
+<br >
+
+## Project Schedule
+Project Period: 2025.02.28~2025.04.08
+<br >
+![image](https://github.com/user-attachments/assets/6c294d85-bd1d-4bbd-aba5-b7dc032fd9ab)
