@@ -35,7 +35,7 @@ DeepCycle은 YOLOv8 기반의 딥러닝 모델과 IoT 기술을 활용하여, �
 | worker | 권빛 |  데이터 전처리, 커스텀 AI 모델 개발, PPT 제작 및 README 작성 |   
 | worker | 김규환 |  Data Server 구축, DB 및 통신 프로토콜 설계 |    
 | worker | 이상윤 |  DB 구축, GUI와 AI 연동, 하드웨어 설계 및 구축 |   
-| worker | 임상윤 |  AI Server 구축, 통신 프로토콜 연동, GUI와 AI 연동 |   
+| worker | 임승연 |  AI Server 구축, 통신 프로토콜 연동, GUI와 AI 연동 |   
 
 ---
 
