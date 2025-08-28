@@ -12,7 +12,7 @@ from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg
 import matplotlib.pyplot as plt
 
 # UI 파일 로드
-from_class = uic.loadUiType("DeepCycle_Admin.ui")[0]
+from_class = uic.loadUiType("deepcycle_admin.ui")[0]
 
 class MplCanvas(FigureCanvasQTAgg):
     def __init__(self, parent=None):
