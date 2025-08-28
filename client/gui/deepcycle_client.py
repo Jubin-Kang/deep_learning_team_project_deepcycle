@@ -12,7 +12,7 @@ from PIL import ImageFont, ImageDraw, Image
 
 UDP_IP = "192.168.0.31"
 
-from_class = uic.loadUiType("DeepCycle_Client.ui")[0]
+from_class = uic.loadUiType("deepcycle_client.ui")[0]
 
 name_map = {
     "Paper": "종이",
